@@ -1,0 +1,6 @@
+# TikTok のトレンド動画URLを1行1件で貼ってください。
+# TikTok Creative Center (https://ads.tiktok.com/business/creativecenter/inspiration/popular/pc/ja)
+# などで再生数の高い動画を探し、URLをコピーします。
+#
+# 再生数がわかる場合はタブ区切りで併記できます (分析の精度が上がります):
+# https://www.tiktok.com/@user/video/1234567890	1200000

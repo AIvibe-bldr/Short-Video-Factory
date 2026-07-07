@@ -1,0 +1,27 @@
+# スタイル: 白人の女の子が英語で商品を紹介する
+display_name: 英語話者の女性が英語で商品を紹介
+description: >
+  海外向け。若い白人女性が英語で商品をレビュー・紹介するスタイル。
+  海外TikTok/リールの「GRWM」「TikTok made me buy it」系の文脈に乗せる。
+language: en
+presenter: >
+  A young Caucasian woman in her early 20s, casual and relatable,
+  speaking directly to camera like a friend sharing a find.
+tone: >
+  Energetic but authentic. Uses trending phrases naturally
+  ("okay so I need to talk about this", "this is your sign to...").
+  Conversational, not salesy.
+visual_style: >
+  Bright bedroom or bathroom setting, natural daylight.
+  Quick cuts between face cam and product close-ups.
+  Bold white captions with black outline, TikTok-native look.
+product_placement: featured
+camera_direction: >
+  Handheld selfie-style framing at eye level. Start with a face-cam hook,
+  cut to product in hand, show real usage, end with results or reaction.
+duration_seconds: 30
+tts_voice: en-US-AriaNeural
+extra_instructions: >
+  Write everything in natural spoken American English.
+  Open with a scroll-stopping hook in the first 2 seconds.
+  End with a soft CTA (e.g. "link in bio" / "you can thank me later").

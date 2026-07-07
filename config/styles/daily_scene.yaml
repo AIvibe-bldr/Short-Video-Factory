@@ -1,0 +1,25 @@
+# スタイル: 一般人が撮った日常のワンシーンに商品がさりげなく写り込む
+display_name: 日常のワンシーンに商品が写り込む
+description: >
+  最初から最後まで一般人が撮影した日常のVlog風ワンシーン。
+  商品は一切紹介せず、画面の中に自然に「ただ写っている」だけ。
+  ステルス感のない自然なプロダクトプレイスメント。
+language: ja
+presenter: ""
+tone: >
+  ナレーションはVlog風の独り言か、なくてもよい。
+  商品には一切言及しない。話題はあくまで日常の出来事。
+visual_style: >
+  スマホで撮ったようなラフな映像。手ブレ感、生活音、自然な照明。
+  作り込まれていない「リアルさ」が最重要。
+product_placement: background
+camera_direction: >
+  朝の支度、通勤、カフェ、部屋での時間など日常の1シーンを切り取る。
+  商品は机の上・カバンの中・棚など、その場に自然にある位置に置く。
+  商品にピントを合わせない。ズームしない。言及しない。
+duration_seconds: 20
+tts_voice: ja-JP-NanamiNeural
+extra_instructions: >
+  絶対に商品を紹介しないこと。全シーンで product_visibility は
+  "subtle" か "none" にし、"featured" は使わない。
+  動画単体として面白い・共感できる日常コンテンツにする。

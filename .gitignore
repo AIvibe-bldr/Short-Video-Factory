@@ -1,0 +1,32 @@
+# 環境変数・秘密情報
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# 生成データ
+data/trends/
+data/insights/
+data/scripts/
+data/audio/
+output/
+
+# ユーザー素材(サンプル以外)
+assets/broll/*
+assets/images/*
+!assets/broll/.gitkeep
+!assets/images/.gitkeep
+
+# 個別設定
+config/product.yaml
+config/settings.local.yaml
+
+# OS
+.DS_Store

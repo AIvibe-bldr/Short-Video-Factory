@@ -1,0 +1,19 @@
+# 商品情報のサンプル。このファイルを config/product.yaml にコピーして書き換えてください。
+name: モーニングブレンド珈琲
+category: ドリップコーヒー
+price: 1,480円 (30袋入り)
+url: https://example.com/products/morning-blend
+target_audience: 20〜40代の在宅ワーカー。朝の時間を大切にしたい人。
+selling_points:
+  - お湯を注ぐだけ10秒で本格ドリップの香り
+  - カフェインひかえめで午後も飲める
+  - 個包装で鮮度が落ちない
+usage_scenes:
+  - 朝の仕事はじめのデスク
+  - 休日のベランダでの読書時間
+  - 午後の在宅ミーティング前
+brand_tone: 落ち着いていて丁寧。がんばりすぎない毎日を応援する。
+ng_expressions:
+  - 世界一
+  - 絶対に痩せる・治るなどの効果効能の断定
+  - 他社商品の名指し比較
