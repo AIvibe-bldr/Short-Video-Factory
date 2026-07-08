@@ -30,6 +30,28 @@ YouTube Shorts / TikTok / Instagram リールでいま再生数を伸ばして�
 """
 
 
+def select_curated(items: list[TrendItem]) -> list[TrendItem]:
+    """人間がgood評価した動画のみを分析対象として返す.
+
+    インプレッション数・再生数だけを基準に学習すると炎上・釣り構成が
+    「勝ちパターン」として強化されてしまうため、`svf curate` で
+    参考にしてよいか判定されていない動画は分析に使わせない。
+    """
+    reviewed = [i for i in items if i.human_rating is not None]
+    if not reviewed:
+        raise RuntimeError(
+            "トレンド動画がまだ評価されていません。炎上・釣り構成を学習しないために、"
+            "先に `svf curate` で参考にしてよい動画かどうかを判定してください。"
+        )
+    usable = [i for i in reviewed if i.human_rating == "good"]
+    if not usable:
+        raise RuntimeError(
+            "good判定の動画がありません。bad判定の動画からは学習しません。"
+            "`svf research` で対象を広げるか、判定を見直してください。"
+        )
+    return usable
+
+
 class _InsightsOutput(BaseModel):
     """Claudeに出力させる構造 (structured outputs 用)."""
 
@@ -52,7 +74,8 @@ class TrendAnalyzer:
         if not items:
             raise ValueError("分析対象のトレンドデータがありません。")
 
-        payload = [self._item_summary(i) for i in items]
+        usable = select_curated(items)
+        payload = [self._item_summary(i) for i in usable]
         response = self.client.messages.parse(
             model=self.model,
             max_tokens=16000,
@@ -72,8 +95,8 @@ class TrendAnalyzer:
         )
         out: _InsightsOutput = response.parsed_output
         return TrendInsights(
-            source_count=len(items),
-            platforms=sorted({i.platform for i in items}),
+            source_count=len(usable),
+            platforms=sorted({i.platform for i in usable}),
             **out.model_dump(),
         )
 

@@ -8,11 +8,39 @@ YouTube Shorts / TikTok / Instagram リールで**いま再生数を伸ばして
 ## 仕組み
 
 ```
-1. research  トレンド収集   YouTube/TikTok/Instagram から再生数の高いショート動画のデータを収集
-2. analyze   要点抽出       Claude がフック・構成・映像表現・ハッシュタグの「勝ちパターン」を抽出
-3. script    台本生成       トレンド × あなたの商品 × スタイル指定 で台本を量産
-4. produce   動画生成       音声合成 + 素材 + テロップ を ffmpeg で 9:16 の mp4 に組み立て
+1. research   トレンド収集   YouTube/TikTok/Instagram から再生数の高いショート動画のデータを収集
+2. curate     人間による判定 収集した動画を1件ずつ確認し、参考にしてよいか (good/bad) を判定
+3. analyze    要点抽出       Claude がgood判定の動画からのみフック・構成・映像表現の「勝ちパターン」を抽出
+4. script     台本生成       トレンド × あなたの商品 × スタイル指定 で台本を量産 (8割exploit/2割explore)
+5. produce    動画生成       音声合成 + 素材 + テロップ を ffmpeg で 9:16 の mp4 に組み立て
+──────────────── (ここで実際にSNSへ投稿するかは人間が判断) ────────────────
+6. publish    公開判断       実際に投稿したか (published) / しなかったか (rejected) を記録
+7. report     実績記録       投稿後のインプレッション数などと、良い伸び方だったか (quality: good/bad) を記録
+                             → 次の script 生成が、良い実績のパターンを優先的に再利用する
 ```
+
+### なぜ「良い動画」を作り続けられるのか (改善ループ)
+
+インプレッション数や再生数だけを基準に学習すると、**炎上煽り・釣りタイトルのような
+動画が「勝ちパターン」として強化されてしまう**リスクがあります。これを防ぐため、
+このツールは2箇所で人間の判断を必須にしています。
+
+1. **`curate`(参考にする動画の選別)** — トレンド収集した動画を分析にかける前に、
+   1件ずつ人間が「参考にしてよい (good)」か「参考にしない (bad)」かを判定します。
+   bad判定の動画は `analyze` の入力から完全に除外されます。
+2. **`report`(実績の質の判定)** — 投稿後の実績を記録する際、数値と一緒に
+   「quality: good / bad」も記録します。仮に数値が良くても、炎上・誤解を招く
+   煽りで伸びただけなら bad と記録すれば、そのパターンは次回以降**強化されません**
+   (bad評価の数値は平均エンゲージメント率の計算から除外されます)。
+
+`script` コマンドで台本を複数生成すると、実績データが十分に溜まっている場合、
+**約8割はこれまでで最も反応が良かった(good評価のみで算出した)パターンを踏襲**し、
+**約2割はあえて違うフック・構成を試します**。この探索分から新しい勝ちパターンが
+見つかれば、次回はそちらが8割側に採用されていきます。
+
+そして、**動画を実際にSNSへ投稿するかどうかは、常に人間 (`svf publish`) が決めます**。
+このツールが自動で投稿することはありません。実績 (`svf report`) を記録できるのも、
+`svf publish` で「投稿した」と記録した動画のみです。
 
 ## スタイルプリセット (動画の内容を細かく指定)
 
@@ -67,19 +95,35 @@ cp config/product.example.yaml config/product.yaml   # 商品情報を記入
 ## 使い方
 
 ```bash
-# トレンド収集 (例: スキンケア系のYouTube Shorts上位20件)
+# 1. トレンド収集 (例: スキンケア系のYouTube Shorts上位20件)
 svf research --platform youtube --query "スキンケア" --limit 20
 
-# 収集したトレンドから勝ちパターンを抽出
+# 2. 収集した動画を1件ずつ確認し、参考にしてよいか判定 (対話式)
+svf curate
+
+# 3. good判定の動画から勝ちパターンを抽出
 svf analyze
 
-# 「可愛い女の子が紹介」スタイルで台本を3本生成
+# 4. 「可愛い女の子が紹介」スタイルで台本を3本生成 (8割exploit/2割explore)
 svf script --style kawaii_presenter --count 3
 
-# 台本から動画を生成 (data/scripts/ 内の全台本)
+# 5. 台本から動画を生成 (data/scripts/ 内の全台本)
 svf produce
 
-# ↑を一括実行して5本量産
+# --- ここで動画の中身を確認し、実際にSNSへ投稿するかは自分で判断 ---
+
+# 6. 投稿した場合、公開決定を記録 (script_idは data/scripts/<id>.json の<id>)
+svf publish kawaii_presenter_20260708_xxxxxxxx --decision published --note "本人確認OK"
+
+# 7. 数日後、実績を記録 (数値 + 良い伸び方だったかのquality評価)
+svf report kawaii_presenter_20260708_xxxxxxxx \
+  --platform youtube --quality good \
+  --impressions 50000 --views 12000 --likes 800 --comments 40 --saves 60
+
+# これまでの実績から見えている「勝ちパターン」を確認
+svf leaderboard
+
+# 1〜5を一括実行して5本量産 (curateは対話式で組み込み済み)
 svf run --style hands_only --query "コーヒー" --count 5
 
 # スタイル一覧
@@ -88,6 +132,10 @@ svf styles
 
 生成された動画は `output/` に、台本は `data/scripts/` に保存されます。
 台本JSONは手で修正してから `svf produce` に渡すこともできます。
+
+実績データ (`data/feedback/`) が溜まるほど、`svf script` の8割は良い実績の
+パターンを踏襲するようになります。継続的にクオリティを上げていくには、
+投稿のたびに `svf publish` → `svf report` を行うことが重要です。
 
 ## プラットフォーム別のトレンド収集について
 

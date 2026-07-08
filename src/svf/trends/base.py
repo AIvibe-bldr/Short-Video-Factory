@@ -43,12 +43,26 @@ def save_trends(items: list[TrendItem], out_dir: Path) -> Path:
     return path
 
 
-def load_latest_trends(trends_dir: Path) -> list[TrendItem]:
-    """最新の収集結果を読み込む."""
+def latest_trends_path(trends_dir: Path) -> Path:
+    """最新の収集結果ファイルのパスを返す (curate で上書きするため)."""
     files = sorted(trends_dir.glob("trends_*.json"))
     if not files:
         raise FileNotFoundError(
             f"{trends_dir} に収集結果がありません。先に `svf research` を実行してください。"
         )
-    data = json.loads(files[-1].read_text(encoding="utf-8"))
+    return files[-1]
+
+
+def load_latest_trends(trends_dir: Path) -> list[TrendItem]:
+    """最新の収集結果を読み込む."""
+    path = latest_trends_path(trends_dir)
+    data = json.loads(path.read_text(encoding="utf-8"))
     return [TrendItem(**d) for d in data]
+
+
+def overwrite_trends(items: list[TrendItem], path: Path) -> None:
+    """既存の収集結果ファイルを人間の評価 (good/bad) 付きで上書きする."""
+    path.write_text(
+        json.dumps([i.model_dump() for i in items], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )

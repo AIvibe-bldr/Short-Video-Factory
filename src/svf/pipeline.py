@@ -16,10 +16,27 @@ from svf.config import (
     load_product,
     load_style,
 )
+from svf.feedback.tracker import (
+    latest_decision,
+    load_pattern_stats,
+    load_performance_history,
+    record_performance,
+    record_publish_decision,
+    recompute_pattern_stats,
+    save_pattern_stats,
+)
 from svf.media.assemble import VideoAssembler
 from svf.media.visuals import VisualPicker
-from svf.models import ProduceResult, TrendInsights, TrendItem, VideoScript
-from svf.script.generator import ScriptGenerator, save_scripts
+from svf.models import (
+    PatternStat,
+    PerformanceRecord,
+    ProduceResult,
+    PublishDecision,
+    TrendInsights,
+    TrendItem,
+    VideoScript,
+)
+from svf.script.generator import ScriptGenerator, load_script, save_scripts
 from svf.trends import InstagramCollector, TikTokCollector, YouTubeCollector
 from svf.trends.base import load_latest_trends, save_trends
 
@@ -28,6 +45,7 @@ INSIGHTS_DIR = DATA_DIR / "insights"
 SCRIPTS_DIR = DATA_DIR / "scripts"
 AUDIO_DIR = DATA_DIR / "audio"
 SOURCES_DIR = DATA_DIR / "sources"
+FEEDBACK_DIR = DATA_DIR / "feedback"
 
 
 class Pipeline:
@@ -91,7 +109,10 @@ class Pipeline:
         generator = ScriptGenerator(
             api_key=self.settings.anthropic_api_key, model=self.settings.claude_model
         )
-        scripts = generator.generate(product, style, insights, count=count)
+        pattern_stats = load_pattern_stats(FEEDBACK_DIR)
+        scripts = generator.generate(
+            product, style, insights, count=count, pattern_stats=pattern_stats
+        )
         paths = save_scripts(scripts, SCRIPTS_DIR)
         return scripts, paths
 
@@ -124,6 +145,49 @@ class Pipeline:
             return {"elevenlabs_api_key": self.settings.elevenlabs_api_key}
         return {}
 
+    # ---- 5. 公開判断 (人間が最終決定。ツールは自動投稿しない) ----
+    def publish_decision(
+        self, script_id: str, decision: str, note: str = ""
+    ) -> PublishDecision:
+        path = self._find_script_path(script_id)
+        script = load_script(path)
+        script.status = decision  # "published" または "rejected"
+        path.write_text(script.model_dump_json(indent=2), encoding="utf-8")
+        return record_publish_decision(FEEDBACK_DIR, script_id, decision, note)
+
+    # ---- 6. 実績記録 (投稿後、人間が数値+quality評価を記録) ----
+    def report_performance(
+        self,
+        script_id: str,
+        platform: str,
+        quality_rating: str,
+        **metrics,
+    ) -> PerformanceRecord:
+        decision = latest_decision(FEEDBACK_DIR, script_id)
+        if decision is None or decision.decision != "published":
+            raise RuntimeError(
+                f"{script_id} はまだ `svf publish` で公開決定が記録されていません。"
+                "実際に投稿した動画のみ実績を記録してください。"
+            )
+        record = record_performance(FEEDBACK_DIR, script_id, platform, quality_rating, **metrics)
+        stats = recompute_pattern_stats(load_performance_history(FEEDBACK_DIR), self._load_all_scripts())
+        save_pattern_stats(stats, FEEDBACK_DIR)
+        return record
+
+    def leaderboard(self) -> list[PatternStat]:
+        """実績 (good評価のみ) から見えている、スタイルごとの「勝ちパターン」一覧."""
+        return load_pattern_stats(FEEDBACK_DIR)
+
+    def _find_script_path(self, script_id: str) -> Path:
+        path = SCRIPTS_DIR / f"{script_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"台本 {script_id} が見つかりません。")
+        return path
+
+    def _load_all_scripts(self) -> dict[str, VideoScript]:
+        scripts = (load_script(p) for p in SCRIPTS_DIR.glob("*.json"))
+        return {s.script_id: s for s in scripts}
+
     # ---- 一括実行 ----
     def run_all(
         self,
@@ -134,7 +198,19 @@ class Pipeline:
         limit: int = 20,
         tts_provider: str = "edge",
     ) -> list[ProduceResult]:
-        items, _ = self.research(platforms, query=query, limit=limit)
+        """収集 → (人間によるgood/bad判定) → 分析 → 台本 → 動画 を一括実行する.
+
+        インプレッション数だけを基準に学習しないよう、収集したトレンドは
+        必ず人間が確認・判定してから分析に使われる (対話式)。
+        """
+        items, path = self.research(platforms, query=query, limit=limit)
+
+        from svf.curation import curate_interactive
+        from svf.trends.base import overwrite_trends
+
+        items = curate_interactive(items)
+        overwrite_trends(items, path)
+
         insights, _ = self.analyze(items)
         scripts, _ = self.write_scripts(style_name, count=count, insights=insights)
         return [self.produce(s, tts_provider=tts_provider) for s in scripts]

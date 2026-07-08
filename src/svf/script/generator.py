@@ -12,7 +12,8 @@ import anthropic
 from pydantic import BaseModel, Field
 
 from svf.config import Product, StylePreset
-from svf.models import Scene, TrendInsights, VideoScript
+from svf.feedback.tracker import top_pattern_for_style
+from svf.models import PatternStat, Scene, TrendInsights, VideoScript
 
 SYSTEM_PROMPT = """\
 あなたはショート動画 (YouTube Shorts / TikTok / Instagram リール) の
@@ -33,6 +34,12 @@ SYSTEM_PROMPT = """\
 - テロップは短く、スマホ画面で読める文字数にする
 - 誇大表現・断定的な効果効能の主張はしない。NG表現リストを厳守する
 - 指定された言語で書く
+
+pattern_tag について:
+台本の「フック+構成」の型を表す短い英数字ラベル (snake_case) を付けてください。
+例: before_after, myth_busting, pov_daily_routine, listicle_tips, problem_agitate_solve
+この動画の実績が後で記録され、同じ型が高い実績を出せば、次回以降その型を
+再利用するよう指示されます。したがって、同じ構成の型には毎回同じラベルを使ってください。
 """
 
 
@@ -54,6 +61,9 @@ class _ScriptOutput(BaseModel):
     caption: str = Field(description="投稿キャプション案")
     hashtags: list[str] = Field(description="ハッシュタグ (#なし)")
     trend_basis: str = Field(description="どのトレンド要素をどう組み込んだか")
+    pattern_tag: str = Field(
+        description="この台本のフック+構成の型を表す短い英数字ラベル (snake_case)"
+    )
 
 
 class ScriptGenerator:
@@ -67,25 +77,42 @@ class ScriptGenerator:
         style: StylePreset,
         insights: TrendInsights,
         count: int = 1,
+        pattern_stats: list[PatternStat] | None = None,
     ) -> list[VideoScript]:
-        """指定スタイルの台本を count 本生成する。各本は異なる切り口にする."""
+        """指定スタイルの台本を count 本生成する.
+
+        実績データ (pattern_stats) がある場合、約8割は過去に最も反応が良かった
+        「勝ちパターン」を踏襲 (exploit) し、約2割はあえて違う構成を試す
+        (explore)。実績がまだなければ全て探索的に生成する。
+        """
+        top = top_pattern_for_style(pattern_stats or [], style.name)
+        variants = self._split_variants(count)
         scripts: list[VideoScript] = []
         used_angles: list[str] = []
-        for i in range(count):
-            script = self._generate_one(product, style, insights, i, used_angles)
+        for variant in variants:
+            script = self._generate_one(product, style, insights, used_angles, variant, top)
             scripts.append(script)
             used_angles.append(f"{script.hook} / {script.title}")
         return scripts
+
+    @staticmethod
+    def _split_variants(count: int) -> list[str]:
+        """8割exploit / 2割explore の比率でバリアントを割り当てる."""
+        if count <= 1:
+            return ["exploit"] * count
+        exploit_n = max(1, min(round(count * 0.8), count))
+        return ["exploit"] * exploit_n + ["explore"] * (count - exploit_n)
 
     def _generate_one(
         self,
         product: Product,
         style: StylePreset,
         insights: TrendInsights,
-        index: int,
         used_angles: list[str],
+        variant: str,
+        top: PatternStat | None,
     ) -> VideoScript:
-        user_prompt = self._build_prompt(product, style, insights, used_angles)
+        user_prompt = self._build_prompt(product, style, insights, used_angles, variant, top)
         response = self.client.messages.parse(
             model=self.model,
             max_tokens=16000,
@@ -110,6 +137,8 @@ class ScriptGenerator:
             caption=out.caption,
             hashtags=out.hashtags,
             trend_basis=out.trend_basis,
+            variant=variant,
+            pattern_tag=out.pattern_tag,
         )
 
     @staticmethod
@@ -118,6 +147,8 @@ class ScriptGenerator:
         style: StylePreset,
         insights: TrendInsights,
         used_angles: list[str],
+        variant: str,
+        top: PatternStat | None,
     ) -> str:
         parts = [
             "## トレンド分析 (現在伸びているショート動画の要点)",
@@ -132,6 +163,27 @@ class ScriptGenerator:
             f"尺は {style.duration_seconds} 秒以内。言語は {style.language}。",
             "この条件で台本を1本書いてください。",
         ]
+
+        if top is not None:
+            if variant == "exploit":
+                parts += [
+                    "",
+                    "## 過去の実績 (このスタイルで最も反応が良かったパターン)",
+                    f"パターンタグ: {top.pattern_tag}",
+                    f"good評価での平均エンゲージメント率: {top.avg_engagement_rate:.1%} "
+                    f"(good実績 {top.good_count}件 / bad実績 {top.bad_count}件)",
+                    "このパターンのフック・構成の型を踏襲してください。"
+                    f"pattern_tag には '{top.pattern_tag}' をそのまま使ってください。",
+                ]
+            else:
+                parts += [
+                    "",
+                    "## 探索指示 (このパターンとは違う構成を試す)",
+                    f"最も実績の良いパターン '{top.pattern_tag}' とはあえて異なる、"
+                    "新しいフック・構成のアイデアを試してください。"
+                    "新しい構成には新しいpattern_tagを付けてください。",
+                ]
+
         if used_angles:
             parts += [
                 "",
