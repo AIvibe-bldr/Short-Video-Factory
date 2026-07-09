@@ -113,7 +113,7 @@ class VideoAssembler:
                         provider=self.tts_provider,
                         **self.tts_settings,
                     )
-                visual = picker.pick(scene.visual_direction)
+                visual = picker.pick(scene.visual_direction, scene.product_visibility)
                 seg = tmp_dir / f"seg_{scene.index:03d}.mp4"
                 self._render_segment(
                     visual, scene.on_screen_text, duration, narration_path, seg

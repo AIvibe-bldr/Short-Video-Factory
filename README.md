@@ -81,15 +81,27 @@ cp config/product.example.yaml config/product.yaml   # 商品情報を記入
 `config/product.yaml` に商品名・ターゲット・訴求ポイント・NG表現などを書きます。
 ここの内容がすべての台本に反映されます。
 
-### 4. 素材の準備 (任意・推奨)
+### 4. 商品写真の取り込み (推奨)
 
-商品の実写素材があるほど動画の質が上がります。
+```bash
+svf add-photos 商品写真1.jpg 商品写真2.png
+```
+
+取り込んだ写真は `assets/product/` に保存され、**動画の中で商品が映るシーン
+(featured / subtle) に自動的に登場します**。
+
+- featured (商品が主役) のシーン → 必ず商品写真が使われる
+- subtle (さりげなく映る) のシーン → 合う一般素材がなければ商品写真が使われる
+- none (商品を映さない) のシーン → 商品写真は使われない
+- 複数枚あればローテーションで使われ、静止画にはゆっくりズームの演出が付きます
+
+### 5. その他の素材 (任意)
 
 - `assets/broll/` … 商品や生活シーンの動画素材 (mp4など)
-- `assets/images/` … 商品写真など (自動でゆっくりズームする演出付き)
+- `assets/images/` … 背景用の静止画素材
 
 ファイル名にキーワードを入れると、台本のシーン指示と自動でマッチングされます
-(例: `product_closeup.mp4`, `desk_morning.jpg`)。素材がない場合はテロップ中心の
+(例: `desk_morning.jpg`)。素材がない場合はテロップ中心の
 グラデーション背景で生成されます。
 
 ## 使い方
@@ -106,6 +118,11 @@ svf analyze
 
 # 4. 「可愛い女の子が紹介」スタイルで台本を3本生成 (8割exploit/2割explore)
 svf script --style kawaii_presenter --count 3
+
+# 4'. 自分の意図を反映したい場合 (雰囲気・方向性 + 必ず入れるテキスト)
+svf script --style kawaii_presenter --count 3 \
+  --brief "梅雨の時期に合う、しっとり落ち着いた雰囲気で" \
+  --must-text "今だけ送料無料" --must-text "詳細はプロフへ"
 
 # 5. 台本から動画を生成 (data/scripts/ 内の全台本)
 svf produce

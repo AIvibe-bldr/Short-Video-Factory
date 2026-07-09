@@ -1,9 +1,10 @@
 """シーンごとの背景素材の選択.
 
 優先順位:
-1. assets/broll/ にあるユーザーの動画素材 (商品の実写・生活シーンなど)
-2. assets/images/ にある静止画素材 (Ken Burns 風に使用)
-3. どちらもなければグラデーション背景 (テロップ中心の動画になる)
+1. assets/product/ にある商品写真 — 商品が映るシーン (featured/subtle) で優先使用
+2. assets/broll/ にあるユーザーの動画素材 (商品の実写・生活シーンなど)
+3. assets/images/ にある静止画素材 (Ken Burns 風に使用)
+4. どれもなければグラデーション背景 (テロップ中心の動画になる)
 
 素材ファイル名にキーワードを入れておくと、シーンの映像指示 (visual_direction) と
 突き合わせて優先的に選ばれる。例: `desk_morning.mp4`, `product_closeup.jpg`
@@ -35,29 +36,69 @@ class SceneVisual:
     colors: Optional[tuple[str, str]] = None
 
 
+def _list_assets(directory: Path, exts: set[str]) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(p for p in directory.glob("*") if p.suffix.lower() in exts)
+
+
 class VisualPicker:
-    def __init__(self, broll_dir: Path, images_dir: Path, seed: Optional[int] = None):
-        self.videos = sorted(
-            p for p in broll_dir.glob("*") if p.suffix.lower() in VIDEO_EXTS
-        ) if broll_dir.exists() else []
-        self.images = sorted(
-            p for p in images_dir.glob("*") if p.suffix.lower() in IMAGE_EXTS
-        ) if images_dir.exists() else []
+    def __init__(
+        self,
+        broll_dir: Path,
+        images_dir: Path,
+        product_dir: Optional[Path] = None,
+        seed: Optional[int] = None,
+    ):
+        self.videos = _list_assets(broll_dir, VIDEO_EXTS)
+        self.images = _list_assets(images_dir, IMAGE_EXTS)
+        # 商品写真 (画像・動画どちらも可)
+        self.product_assets = (
+            _list_assets(product_dir, VIDEO_EXTS | IMAGE_EXTS) if product_dir else []
+        )
         self._rng = random.Random(seed)
         self._used: set[Path] = set()
+        self._product_cursor = 0
 
-    def pick(self, visual_direction: str) -> SceneVisual:
-        """シーンの映像指示に合う素材を選ぶ."""
+    def pick(self, visual_direction: str, product_visibility: str = "none") -> SceneVisual:
+        """シーンの映像指示と商品の映り方に合う素材を選ぶ.
+
+        - featured: 商品が主役のシーン。商品写真があれば必ずそれを使う。
+        - subtle:   さりげなく映るシーン。映像指示に合う一般素材を優先し、
+                    見つからなければ商品写真を使う。
+        - none:     商品を映さないシーン。商品写真は使わない。
+        """
+        if product_visibility == "featured" and self.product_assets:
+            return self._to_visual(self._next_product_asset())
+
         candidates = self.videos + self.images
+        best = self._match_by_keyword(candidates, visual_direction) if candidates else None
+
+        if best is None and product_visibility == "subtle" and self.product_assets:
+            return self._to_visual(self._next_product_asset())
+
         if candidates:
-            best = self._match_by_keyword(candidates, visual_direction)
             if best is None:
                 unused = [c for c in candidates if c not in self._used] or candidates
                 best = self._rng.choice(unused)
             self._used.add(best)
-            kind = "video" if best.suffix.lower() in VIDEO_EXTS else "image"
-            return SceneVisual(kind=kind, path=best)
+            return self._to_visual(best)
+
+        # 一般素材ゼロ。商品が映ってよいシーンなら商品写真で埋める
+        if product_visibility != "none" and self.product_assets:
+            return self._to_visual(self._next_product_asset())
         return SceneVisual(kind="gradient", colors=self._rng.choice(GRADIENTS))
+
+    def _next_product_asset(self) -> Path:
+        """商品写真をローテーションで返す (同じ写真ばかりにならないように)."""
+        asset = self.product_assets[self._product_cursor % len(self.product_assets)]
+        self._product_cursor += 1
+        return asset
+
+    @staticmethod
+    def _to_visual(path: Path) -> SceneVisual:
+        kind = "video" if path.suffix.lower() in VIDEO_EXTS else "image"
+        return SceneVisual(kind=kind, path=path)
 
     def _match_by_keyword(
         self, candidates: list[Path], direction: str

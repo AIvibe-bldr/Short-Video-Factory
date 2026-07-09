@@ -102,7 +102,15 @@ class Pipeline:
         count: int = 1,
         product: Optional[Product] = None,
         insights: Optional[TrendInsights] = None,
+        brief: str = "",
+        must_texts: Optional[list[str]] = None,
     ) -> tuple[list[VideoScript], list[Path]]:
+        """台本を生成する.
+
+        Args:
+            brief: 人間が指定する動画の雰囲気・方向性 (任意)。
+            must_texts: 動画に必ず入れるテキスト (任意・複数可)。
+        """
         product = product or load_product()
         insights = insights or load_latest_insights(INSIGHTS_DIR)
         style = load_style(style_name)
@@ -111,7 +119,8 @@ class Pipeline:
         )
         pattern_stats = load_pattern_stats(FEEDBACK_DIR)
         scripts = generator.generate(
-            product, style, insights, count=count, pattern_stats=pattern_stats
+            product, style, insights, count=count, pattern_stats=pattern_stats,
+            brief=brief, must_texts=must_texts,
         )
         paths = save_scripts(scripts, SCRIPTS_DIR)
         return scripts, paths
@@ -129,7 +138,11 @@ class Pipeline:
             tts_provider=tts_provider,
             tts_settings=self._tts_settings(tts_provider),
         )
-        picker = VisualPicker(ASSETS_DIR / "broll", ASSETS_DIR / "images")
+        picker = VisualPicker(
+            ASSETS_DIR / "broll",
+            ASSETS_DIR / "images",
+            product_dir=ASSETS_DIR / "product",
+        )
         return assembler.produce(
             script,
             picker,
@@ -197,6 +210,8 @@ class Pipeline:
         count: int,
         limit: int = 20,
         tts_provider: str = "edge",
+        brief: str = "",
+        must_texts: Optional[list[str]] = None,
     ) -> list[ProduceResult]:
         """収集 → (人間によるgood/bad判定) → 分析 → 台本 → 動画 を一括実行する.
 
@@ -212,5 +227,8 @@ class Pipeline:
         overwrite_trends(items, path)
 
         insights, _ = self.analyze(items)
-        scripts, _ = self.write_scripts(style_name, count=count, insights=insights)
+        scripts, _ = self.write_scripts(
+            style_name, count=count, insights=insights,
+            brief=brief, must_texts=must_texts,
+        )
         return [self.produce(s, tts_provider=tts_provider) for s in scripts]

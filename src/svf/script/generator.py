@@ -78,19 +78,29 @@ class ScriptGenerator:
         insights: TrendInsights,
         count: int = 1,
         pattern_stats: list[PatternStat] | None = None,
+        brief: str = "",
+        must_texts: list[str] | None = None,
     ) -> list[VideoScript]:
         """指定スタイルの台本を count 本生成する.
 
         実績データ (pattern_stats) がある場合、約8割は過去に最も反応が良かった
         「勝ちパターン」を踏襲 (exploit) し、約2割はあえて違う構成を試す
         (explore)。実績がまだなければ全て探索的に生成する。
+
+        Args:
+            brief: 人間が指定する動画の雰囲気・方向性 (任意)。
+            must_texts: 動画に必ず入れるテキスト (任意・複数可)。
+                テロップまたはナレーションとして全台本に組み込まれる。
         """
         top = top_pattern_for_style(pattern_stats or [], style.name)
         variants = self._split_variants(count)
         scripts: list[VideoScript] = []
         used_angles: list[str] = []
         for variant in variants:
-            script = self._generate_one(product, style, insights, used_angles, variant, top)
+            script = self._generate_one(
+                product, style, insights, used_angles, variant, top,
+                brief=brief, must_texts=must_texts or [],
+            )
             scripts.append(script)
             used_angles.append(f"{script.hook} / {script.title}")
         return scripts
@@ -111,8 +121,13 @@ class ScriptGenerator:
         used_angles: list[str],
         variant: str,
         top: PatternStat | None,
+        brief: str = "",
+        must_texts: list[str] | None = None,
     ) -> VideoScript:
-        user_prompt = self._build_prompt(product, style, insights, used_angles, variant, top)
+        user_prompt = self._build_prompt(
+            product, style, insights, used_angles, variant, top,
+            brief=brief, must_texts=must_texts or [],
+        )
         response = self.client.messages.parse(
             model=self.model,
             max_tokens=16000,
@@ -149,6 +164,8 @@ class ScriptGenerator:
         used_angles: list[str],
         variant: str,
         top: PatternStat | None,
+        brief: str = "",
+        must_texts: list[str] | None = None,
     ) -> str:
         parts = [
             "## トレンド分析 (現在伸びているショート動画の要点)",
@@ -163,6 +180,23 @@ class ScriptGenerator:
             f"尺は {style.duration_seconds} 秒以内。言語は {style.language}。",
             "この条件で台本を1本書いてください。",
         ]
+
+        if brief:
+            parts += [
+                "",
+                "## 制作者の意図 (最優先で反映すること)",
+                brief,
+                "この意図はトレンド分析やスタイル指定と矛盾する場合でも優先してください。",
+            ]
+
+        if must_texts:
+            parts += [
+                "",
+                "## 動画に必ず入れるテキスト (一字一句変えないこと)",
+                *[f"- {t}" for t in must_texts],
+                "上記の各テキストを、テロップ (on_screen_text) または"
+                "ナレーション (narration) のいずれかに、原文のまま必ず含めてください。",
+            ]
 
         if top is not None:
             if variant == "exploit":

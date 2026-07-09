@@ -1,6 +1,7 @@
 """Short Video Factory CLI.
 
 使い方:
+  svf add-photos 商品写真1.jpg 商品写真2.png              # 商品写真の取り込み
   svf research --platform youtube --query "スキンケア"   # トレンド収集
   svf curate                                             # 参考にしてよいか人間が判定 (good/bad)
   svf analyze                                            # 要点抽出 (good判定のみ使用)
@@ -23,9 +24,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from svf.config import list_styles, load_style
+from svf.config import ASSETS_DIR, list_styles, load_style
 from svf.pipeline import Pipeline, SCRIPTS_DIR, TRENDS_DIR
 from svf.script.generator import load_script
+
+PRODUCT_PHOTOS_DIR = ASSETS_DIR / "product"
 
 app = typer.Typer(help="トレンド分析型ショート動画量産ツール", no_args_is_help=True)
 console = Console()
@@ -88,17 +91,60 @@ def analyze():
     console.print(f"[green]保存:[/green] {path}")
 
 
+@app.command(name="add-photos")
+def add_photos(
+    photos: List[Path] = typer.Argument(..., help="商品写真・動画のパス (複数指定可)"),
+):
+    """商品の写真 (または動画) を取り込む.
+
+    取り込んだ写真は assets/product/ に保存され、動画生成時に
+    商品が映るシーン (featured/subtle) で優先的に使われる。
+    """
+    import shutil
+
+    PRODUCT_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    ok = 0
+    for src in photos:
+        if not src.exists():
+            console.print(f"[red]見つかりません:[/red] {src}")
+            continue
+        if src.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm", ".mkv"}:
+            console.print(f"[yellow]未対応の形式なのでスキップ:[/yellow] {src}")
+            continue
+        dest = PRODUCT_PHOTOS_DIR / src.name
+        shutil.copy2(src, dest)
+        console.print(f"[green]取り込み:[/green] {dest}")
+        ok += 1
+    total = sum(
+        1 for p in PRODUCT_PHOTOS_DIR.glob("*")
+        if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm", ".mkv"}
+    )
+    console.print(f"\n{ok}件を取り込みました。現在の商品素材: {total}件")
+    console.print("動画生成時、商品が映るシーンでこれらの写真が自動的に使われます。")
+
+
 @app.command()
 def script(
     style: str = typer.Option(..., "--style", "-s", help="スタイルプリセット名"),
     count: int = typer.Option(1, "--count", "-c", help="生成する台本の本数"),
+    brief: str = typer.Option(
+        "", "--brief", "-b",
+        help="動画の雰囲気・方向性の指定 (例: '梅雨の時期に合う落ち着いた雰囲気で')",
+    ),
+    must_text: List[str] = typer.Option(
+        [], "--must-text", "-t",
+        help="動画に必ず入れるテキスト (複数指定可)。テロップかナレーションに原文のまま入る",
+    ),
 ):
     """トレンド × 商品 × スタイルで台本を生成する (Claude API使用).
 
     実績データがあれば約8割は勝ちパターンを踏襲 (exploit)、
     約2割はあえて違う構成を試す (explore)。
+    --brief や --must-text で自分の意図を台本に反映できる。
     """
-    scripts, paths = Pipeline().write_scripts(style, count=count)
+    scripts, paths = Pipeline().write_scripts(
+        style, count=count, brief=brief, must_texts=list(must_text)
+    )
     for s, p in zip(scripts, paths):
         tag = "[magenta]explore[/magenta]" if s.variant == "explore" else "[blue]exploit[/blue]"
         console.print(f"[bold cyan]{s.title}[/bold cyan]  ({tag} / {s.pattern_tag})")
@@ -215,10 +261,15 @@ def run(
     platform: List[str] = typer.Option(["youtube"], "--platform", "-p"),
     limit: int = typer.Option(20, "--limit", "-n"),
     tts: str = typer.Option("edge", "--tts"),
+    brief: str = typer.Option("", "--brief", "-b", help="動画の雰囲気・方向性の指定 (任意)"),
+    must_text: List[str] = typer.Option(
+        [], "--must-text", "-t", help="動画に必ず入れるテキスト (複数指定可)"
+    ),
 ):
-    """収集→分析→台本→動画を一括実行する."""
+    """収集→curate(対話)→分析→台本→動画を一括実行する."""
     results = Pipeline().run_all(
-        list(platform), query, style, count, limit=limit, tts_provider=tts
+        list(platform), query, style, count, limit=limit, tts_provider=tts,
+        brief=brief, must_texts=list(must_text),
     )
     console.print(f"\n[bold green]{len(results)}本の動画が完成しました[/bold green]")
     for r in results:

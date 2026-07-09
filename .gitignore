@@ -22,8 +22,10 @@ output/
 # ユーザー素材(サンプル以外)
 assets/broll/*
 assets/images/*
+assets/product/*
 !assets/broll/.gitkeep
 !assets/images/.gitkeep
+!assets/product/.gitkeep
 
 # 個別設定
 config/product.yaml
