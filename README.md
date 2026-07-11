@@ -42,6 +42,25 @@ YouTube Shorts / TikTok / Instagram リールで**いま再生数を伸ばして
 このツールが自動で投稿することはありません。実績 (`svf report`) を記録できるのも、
 `svf publish` で「投稿した」と記録した動画のみです。
 
+### どの動画から購入されたかを特定する (計測リンク入り固定コメント)
+
+台本には1本ごとに**固有の計測コード**と、動画の内容に合わせて文面が少しずつ違う
+**固定コメント文**が自動で付きます。`svf links <script_id>` を実行すると、
+プラットフォーム別の計測リンク (UTMパラメータ付き商品URL) を差し込んだ
+コピペ用の固定コメントが表示されるので、投稿直後にコメント欄へ書き込んで固定します。
+
+```
+動画で紹介したのはこれです☕ → https://あなたの商品URL?utm_source=youtube&utm_medium=short_video&utm_campaign=svf_gilqql
+```
+
+- LP側のアクセス解析 (GA4など) で `utm_campaign=svf_xxxxxx` を見れば、
+  **どの動画から何人来て何人買ったかが動画単位で分かります**
+- リンクを踏まず検索して買う人向けに、計測コードは `SVF-XXXXXX` 形式の
+  クーポンコードとしても使えます (ショップ側でコード登録が必要)
+- 計測した数値を `svf report --clicks --purchases` で記録すると、
+  8:2学習の勝ちパターン選定が「バズるパターン」ではなく
+  「**購入につながるパターン**」を優先するようになります
+
 ## スタイルプリセット (動画の内容を細かく指定)
 
 | プリセット | 内容 | 商品の見せ方 |
@@ -129,13 +148,18 @@ svf produce
 
 # --- ここで動画の中身を確認し、実際にSNSへ投稿するかは自分で判断 ---
 
-# 6. 投稿した場合、公開決定を記録 (script_idは data/scripts/<id>.json の<id>)
+# 6. 投稿時: 計測リンク入りの固定コメントを取得してコメント欄に固定
+svf links kawaii_presenter_20260708_xxxxxxxx
+
+# 7. 投稿した場合、公開決定を記録 (script_idは data/scripts/<id>.json の<id>)
 svf publish kawaii_presenter_20260708_xxxxxxxx --decision published --note "本人確認OK"
 
-# 7. 数日後、実績を記録 (数値 + 良い伸び方だったかのquality評価)
+# 8. 数日後、実績を記録 (数値 + 良い伸び方だったかのquality評価)
+#    --clicks/--purchases を入れると勝ちパターン選定が「購入率」優先になる
 svf report kawaii_presenter_20260708_xxxxxxxx \
   --platform youtube --quality good \
-  --impressions 50000 --views 12000 --likes 800 --comments 40 --saves 60
+  --impressions 50000 --views 12000 --likes 800 --comments 40 --saves 60 \
+  --clicks 150 --purchases 6 --revenue 8880
 
 # これまでの実績から見えている「勝ちパターン」を確認
 svf leaderboard

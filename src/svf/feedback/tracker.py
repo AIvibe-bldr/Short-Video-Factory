@@ -74,6 +74,9 @@ def record_performance(
     comments: int = 0,
     saves: int = 0,
     shares: int = 0,
+    clicks: int = 0,
+    purchases: int = 0,
+    revenue: float = 0.0,
     posted_url: str = "",
     quality_notes: str = "",
 ) -> PerformanceRecord:
@@ -88,6 +91,9 @@ def record_performance(
         comments=comments,
         saves=saves,
         shares=shares,
+        clicks=clicks,
+        purchases=purchases,
+        revenue=revenue,
         quality_rating=quality_rating,
         quality_notes=quality_notes,
     )
@@ -108,7 +114,7 @@ def recompute_pattern_stats(
     """style×pattern_tag ごとに集計する.
 
     bad評価の実績はサンプル数 (bad_count) には反映するが、
-    avg_engagement_rate の計算には使わない。
+    avg_engagement_rate / avg_conversion_rate の計算には使わない。
     """
     groups: dict[tuple[str, str], dict] = {}
     for rec in history:
@@ -117,18 +123,27 @@ def recompute_pattern_stats(
             continue
         key = (script.style, script.pattern_tag)
         g = groups.setdefault(
-            key, {"good": 0, "bad": 0, "rates": [], "last_used": rec.recorded_at}
+            key,
+            {
+                "good": 0, "bad": 0, "rates": [], "cv_rates": [],
+                "purchases": 0, "last_used": rec.recorded_at,
+            },
         )
         if rec.quality_rating == "bad":
             g["bad"] += 1
         else:
             g["good"] += 1
             g["rates"].append(rec.engagement_rate())
+            # 購入データが記録されている実績のみ購入率の平均に含める
+            if rec.purchases or rec.clicks:
+                g["cv_rates"].append(rec.conversion_rate())
+            g["purchases"] += rec.purchases
         g["last_used"] = max(g["last_used"], rec.recorded_at)
 
     stats = []
     for (style, tag), g in groups.items():
         avg = sum(g["rates"]) / len(g["rates"]) if g["rates"] else 0.0
+        avg_cv = sum(g["cv_rates"]) / len(g["cv_rates"]) if g["cv_rates"] else 0.0
         stats.append(
             PatternStat(
                 pattern_tag=tag,
@@ -137,10 +152,17 @@ def recompute_pattern_stats(
                 good_count=g["good"],
                 bad_count=g["bad"],
                 avg_engagement_rate=avg,
+                avg_conversion_rate=avg_cv,
+                total_purchases=g["purchases"],
                 last_used=g["last_used"],
             )
         )
-    stats.sort(key=lambda s: s.avg_engagement_rate, reverse=True)
+    # 購入データがあるパターンを最優先し、その中では購入率順。
+    # 購入データがなければエンゲージメント率順。
+    stats.sort(
+        key=lambda s: (s.total_purchases > 0, s.avg_conversion_rate, s.avg_engagement_rate),
+        reverse=True,
+    )
     return stats
 
 

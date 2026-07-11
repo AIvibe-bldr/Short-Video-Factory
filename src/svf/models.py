@@ -82,6 +82,10 @@ class VideoScript(BaseModel):
     pattern_tag: str = ""  # フック・構成を表す短いラベル (実績集計のキー)
     status: Literal["draft", "published", "rejected"] = "draft"  # 人間の最終判断
 
+    # 流入計測用 (どの動画から商品ページに来たかを特定する)
+    short_code: str = ""  # 台本固有の短いコード。計測リンクのutm_campaignに入る
+    pinned_comment: str = ""  # 固定コメントのテンプレート ({LINK}に計測リンクが入る)
+
 
 class ProduceResult(BaseModel):
     """動画生成の結果."""
@@ -118,6 +122,10 @@ class PerformanceRecord(BaseModel):
     comments: int = 0
     saves: int = 0
     shares: int = 0
+    # 流入計測 (固定コメントの計測リンク / クーポンコード経由で判明した数値)
+    clicks: int = 0  # 計測リンクのクリック数 (LP側のutm_campaign別セッション数)
+    purchases: int = 0  # この動画経由の購入数
+    revenue: float = 0.0  # この動画経由の売上 (任意)
     quality_rating: Literal["good", "bad"]
     quality_notes: str = ""
     recorded_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -126,6 +134,11 @@ class PerformanceRecord(BaseModel):
         """反応数 / (視聴数 or インプレッション数)."""
         base = self.views or self.impressions or 1
         return (self.likes + self.comments + self.saves + self.shares) / base
+
+    def conversion_rate(self) -> float:
+        """購入数 / (クリック数 or 視聴数 or インプレッション数)."""
+        base = self.clicks or self.views or self.impressions or 1
+        return self.purchases / base
 
 
 class PatternStat(BaseModel):
@@ -137,4 +150,6 @@ class PatternStat(BaseModel):
     good_count: int = 0
     bad_count: int = 0
     avg_engagement_rate: float = 0.0  # good評価のみの平均
+    avg_conversion_rate: float = 0.0  # good評価のみの平均 (購入データがある実績のみ)
+    total_purchases: int = 0  # good評価の実績の購入数合計
     last_used: str = ""

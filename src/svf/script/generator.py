@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from svf.config import Product, StylePreset
 from svf.feedback.tracker import top_pattern_for_style
 from svf.models import PatternStat, Scene, TrendInsights, VideoScript
+from svf.tracking import make_short_code
 
 SYSTEM_PROMPT = """\
 あなたはショート動画 (YouTube Shorts / TikTok / Instagram リール) の
@@ -40,6 +41,17 @@ pattern_tag について:
 例: before_after, myth_busting, pov_daily_routine, listicle_tips, problem_agitate_solve
 この動画の実績が後で記録され、同じ型が高い実績を出せば、次回以降その型を
 再利用するよう指示されます。したがって、同じ構成の型には毎回同じラベルを使ってください。
+
+pinned_comment (固定コメント) について:
+投稿直後に投稿者自身がコメント欄に書き込み、固定するためのコメント文を書いてください。
+- 動画の内容・フックに合わせて、台本ごとに文面を変えること
+  (この文面の違いとリンクの計測パラメータで、どの動画から商品ページに
+  来たかを後から特定します)
+- 商品リンクを入れる位置に、プレースホルダ {LINK} を必ず1回だけ入れること
+  (実際のURLは後からツールが差し込むので、URL自体は書かないこと)
+- 宣伝色を出しすぎず、動画の補足や視聴者への一言 + 自然なリンク誘導にすること
+- product_placement が background のスタイルでは、商品の宣伝はせず
+  「概要欄/コメントに載せておきます」程度のさりげない一言にすること
 """
 
 
@@ -63,6 +75,9 @@ class _ScriptOutput(BaseModel):
     trend_basis: str = Field(description="どのトレンド要素をどう組み込んだか")
     pattern_tag: str = Field(
         description="この台本のフック+構成の型を表す短い英数字ラベル (snake_case)"
+    )
+    pinned_comment: str = Field(
+        description="投稿直後に固定するコメント文。商品リンク位置に {LINK} を1回だけ含める"
     )
 
 
@@ -141,8 +156,9 @@ class ScriptGenerator:
             Scene(index=n, **s.model_dump()) for n, s in enumerate(out.scenes)
         ]
         total = max((s.end_seconds for s in scenes), default=style.duration_seconds)
+        script_id = f"{style.name}_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         return VideoScript(
-            script_id=f"{style.name}_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}",
+            script_id=script_id,
             style=style.name,
             language=style.language,
             title=out.title,
@@ -154,6 +170,8 @@ class ScriptGenerator:
             trend_basis=out.trend_basis,
             variant=variant,
             pattern_tag=out.pattern_tag,
+            short_code=make_short_code(script_id),
+            pinned_comment=out.pinned_comment,
         )
 
     @staticmethod

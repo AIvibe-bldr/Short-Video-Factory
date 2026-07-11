@@ -7,6 +7,7 @@
   svf analyze                                            # 要点抽出 (good判定のみ使用)
   svf script --style kawaii_presenter --count 3          # 台本生成 (8割exploit/2割explore)
   svf produce data/scripts/xxx.json                      # 動画生成
+  svf links <script_id>                                  # 計測リンク入り固定コメントを表示
   svf publish <script_id> --decision published           # 投稿するか人間が最終決定
   svf report  <script_id> --platform youtube --quality good --views 12000 --likes 300
                                                           # 投稿後の実績を記録 (次の台本生成に反映)
@@ -150,7 +151,11 @@ def script(
         console.print(f"[bold cyan]{s.title}[/bold cyan]  ({tag} / {s.pattern_tag})")
         console.print(f"  フック: {s.hook}")
         console.print(f"  シーン数: {len(s.scenes)} / 尺: {s.total_seconds}秒")
+        console.print(f"  計測コード: {s.short_code}")
         console.print(f"  [green]保存:[/green] {p}\n")
+    console.print(
+        "投稿時は `svf links <script_id>` で計測リンク入りの固定コメントを取得できます。"
+    )
 
 
 @app.command()
@@ -171,6 +176,61 @@ def produce(
         console.print(f"生成中: {s.script_id} ...")
         result = pipeline.produce(s, tts_provider=tts)
         console.print(f"  [green]完成:[/green] {result.video_path}")
+
+
+@app.command()
+def links(
+    script_id: str = typer.Argument(..., help="台本ID (data/scripts/<id>.json の<id>部分)"),
+    platform: List[str] = typer.Option(
+        ["youtube", "tiktok", "instagram"], "--platform", "-p",
+        help="投稿先プラットフォーム (複数指定可)",
+    ),
+):
+    """動画ごとの計測リンク入り固定コメントを表示する (コピペ用).
+
+    リンクには動画固有のコード (utm_campaign=svf_xxxxxx) が入っており、
+    LP側のアクセス解析でどの動画から来たかを動画単位で特定できる。
+    投稿直後にこのコメントを書き込み、固定すること。
+    """
+    from svf.config import load_product
+    from svf.tracking import build_tracking_url, coupon_code, render_pinned_comment
+
+    path = SCRIPTS_DIR / f"{script_id}.json"
+    if not path.exists():
+        console.print(f"[red]台本 {script_id} が見つかりません。[/red]")
+        raise typer.Exit(1)
+    s = load_script(path)
+    if not s.short_code:
+        console.print(
+            "[yellow]この台本には計測コードがありません "
+            "(旧バージョンで生成された台本です)。[/yellow]"
+        )
+        raise typer.Exit(1)
+    try:
+        product_url = load_product().url
+    except FileNotFoundError:
+        product_url = ""
+    if not product_url:
+        console.print(
+            "[yellow]config/product.yaml の url が未設定です。"
+            "設定するとリンクが生成されます。[/yellow]"
+        )
+
+    console.print(f"[bold]動画:[/bold] {s.title}")
+    console.print(f"[bold]計測コード:[/bold] {s.short_code}  "
+                  f"(クーポンとして使う場合: {coupon_code(s.short_code)})\n")
+    for pf in platform:
+        url = build_tracking_url(product_url, pf, s.short_code)
+        comment = render_pinned_comment(s.pinned_comment, product_url, pf, s.short_code)
+        console.print(f"[bold cyan]■ {pf}[/bold cyan]")
+        if url:
+            console.print(f"  計測リンク: {url}")
+        console.print("  固定コメント (コピペ用):")
+        console.print(f"[on grey11]{comment}[/on grey11]\n")
+    console.print(
+        "LP側のアクセス解析 (GA4など) で utm_campaign=svf_" + s.short_code +
+        " のセッション数・購入数を確認し、`svf report` の --clicks / --purchases に記録してください。"
+    )
 
 
 @app.command()
@@ -207,10 +267,19 @@ def report(
     comments: int = typer.Option(0, "--comments"),
     saves: int = typer.Option(0, "--saves"),
     shares: int = typer.Option(0, "--shares"),
+    clicks: int = typer.Option(
+        0, "--clicks", help="計測リンクのクリック数 (LP解析の utm_campaign 別セッション数)"
+    ),
+    purchases: int = typer.Option(0, "--purchases", help="この動画経由の購入数"),
+    revenue: float = typer.Option(0.0, "--revenue", help="この動画経由の売上 (任意)"),
     url: str = typer.Option("", "--url", help="投稿先URL (任意)"),
     notes: str = typer.Option("", "--notes", help="quality判定の理由 (任意)"),
 ):
-    """投稿後の実績を記録する。bad評価の実績は次回の勝ちパターン強化から除外される."""
+    """投稿後の実績を記録する。bad評価の実績は次回の勝ちパターン強化から除外される.
+
+    --clicks / --purchases を記録すると、勝ちパターンの選定基準が
+    エンゲージメント率より購入率を優先するようになる。
+    """
     if quality not in ("good", "bad"):
         console.print("[red]--quality は good か bad を指定してください[/red]")
         raise typer.Exit(1)
@@ -224,13 +293,16 @@ def report(
         comments=comments,
         saves=saves,
         shares=shares,
+        clicks=clicks,
+        purchases=purchases,
+        revenue=revenue,
         posted_url=url,
         quality_notes=notes,
     )
-    console.print(
-        f"[green]記録しました[/green] エンゲージメント率: {record.engagement_rate():.2%} "
-        f"(quality: {quality})"
-    )
+    msg = f"[green]記録しました[/green] エンゲージメント率: {record.engagement_rate():.2%}"
+    if clicks or purchases:
+        msg += f" / 購入率: {record.conversion_rate():.2%} ({purchases}件)"
+    console.print(msg + f" (quality: {quality})")
 
 
 @app.command()
@@ -240,14 +312,20 @@ def leaderboard():
     if not stats:
         console.print("まだ実績データがありません。`svf publish` → `svf report` で記録してください。")
         return
-    table = Table(title="パターン別 実績 (good評価のみで平均を算出)")
+    table = Table(title="パターン別 実績 (good評価のみで平均を算出 / 購入データ優先で並び替え)")
     table.add_column("スタイル")
     table.add_column("パターン")
-    table.add_column("平均エンゲージメント率", justify="right")
-    table.add_column("good/bad件数", justify="right")
+    table.add_column("購入率", justify="right")
+    table.add_column("購入数", justify="right")
+    table.add_column("エンゲージ率", justify="right")
+    table.add_column("good/bad", justify="right")
     for s in stats:
         table.add_row(
-            s.style, s.pattern_tag, f"{s.avg_engagement_rate:.2%}",
+            s.style,
+            s.pattern_tag,
+            f"{s.avg_conversion_rate:.2%}" if s.total_purchases else "-",
+            str(s.total_purchases) if s.total_purchases else "-",
+            f"{s.avg_engagement_rate:.2%}",
             f"{s.good_count}/{s.bad_count}",
         )
     console.print(table)
