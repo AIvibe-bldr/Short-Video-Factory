@@ -11,6 +11,8 @@
   svf publish <script_id> --decision published           # 投稿するか人間が最終決定
   svf report  <script_id> --platform youtube --quality good --views 12000 --likes 300
                                                           # 投稿後の実績を記録 (次の台本生成に反映)
+  svf import-csv 実績.csv                                 # 実績のCSV一括取り込み (--template で雛形作成)
+  svf sync-ga4 --days 28                                 # GA4から流入・購入データを自動取得して記録
   svf leaderboard                                        # 実績から見えている勝ちパターン
   svf run --style hands_only --query "コーヒー" --count 5 # 一括実行 (curate含む)
   svf styles                                             # スタイル一覧
@@ -303,6 +305,135 @@ def report(
     if clicks or purchases:
         msg += f" / 購入率: {record.conversion_rate():.2%} ({purchases}件)"
     console.print(msg + f" (quality: {quality})")
+
+
+@app.command(name="import-csv")
+def import_csv(
+    csv_path: Optional[Path] = typer.Argument(None, help="実績CSVのパス"),
+    template: bool = typer.Option(
+        False, "--template", help="記入用テンプレートCSVを作成して終了"
+    ),
+):
+    """実績をCSVで一括取り込みする (TikTok Shop Seller Center等の数値の転記用).
+
+    列: script_id または short_code / platform / quality (good|bad) /
+        impressions, views, likes, comments, saves, shares,
+        clicks, purchases, revenue, url, notes (数値は空欄可)
+    """
+    from svf.feedback.importer import TEMPLATE_CSV
+
+    if template:
+        dest = Path("performance_template.csv")
+        dest.write_text(TEMPLATE_CSV, encoding="utf-8")
+        console.print(f"[green]テンプレートを作成しました:[/green] {dest}")
+        console.print("2行目以降のサンプルを消して、実際の数値を記入してください。")
+        return
+    if csv_path is None or not csv_path.exists():
+        console.print("[red]CSVファイルを指定してください。テンプレートは --template で作成できます。[/red]")
+        raise typer.Exit(1)
+
+    result = Pipeline().import_performance_csv(csv_path)
+    console.print(f"[green]{len(result.imported)}件を取り込みました[/green]")
+    for rec in result.imported:
+        msg = f"  ・{rec.script_id} ({rec.platform}) エンゲージ率 {rec.engagement_rate():.2%}"
+        if rec.purchases or rec.clicks:
+            msg += f" / 購入率 {rec.conversion_rate():.2%} ({rec.purchases}件)"
+        console.print(msg)
+    if result.errors:
+        console.print(f"\n[yellow]{len(result.errors)}行をスキップしました:[/yellow]")
+        for e in result.errors:
+            console.print(f"  [red]・{e}[/red]")
+
+
+@app.command(name="sync-ga4")
+def sync_ga4(
+    days: int = typer.Option(28, "--days", help="取得対象期間 (直近N日)"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="取得結果の表示のみ (記録しない)"
+    ),
+):
+    """GA4から動画別の流入・購入データを自動取得して実績に記録する.
+
+    計測リンクの utm_campaign (svf_xxxxxx) をキーに、セッション数・購入数・
+    売上を動画単位で取得する。記録時は動画ごとに quality (good/bad) を
+    人間が判定する (自動では記録しない)。
+    """
+    from rich.prompt import Prompt
+
+    from svf.integrations.ga4 import fetch_video_traffic
+    from svf.pipeline import FEEDBACK_DIR
+
+    pipeline = Pipeline()
+    settings = pipeline.settings
+    if not settings.ga4_property_id:
+        console.print(
+            "[red]GA4_PROPERTY_ID が未設定です。[/red] .env に設定してください "
+            "(GA4管理画面 > プロパティ設定 に表示される数字)。"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"GA4 (property {settings.ga4_property_id}) から直近{days}日を取得中...")
+    rows = fetch_video_traffic(
+        settings.ga4_property_id, days=days,
+        credentials_path=settings.google_credentials_path,
+    )
+    if not rows:
+        console.print("svf_ で始まる utm_campaign のトラフィックが見つかりませんでした。")
+        return
+
+    # short_code → 台本の対応付け
+    scripts = pipeline._load_all_scripts()
+    by_code = {s.short_code: s for s in scripts.values() if s.short_code}
+
+    table = Table(title=f"GA4 取得結果 (直近{days}日)")
+    table.add_column("動画")
+    table.add_column("PF")
+    table.add_column("セッション", justify="right")
+    table.add_column("購入", justify="right")
+    table.add_column("売上", justify="right")
+    matched = []
+    for r in rows:
+        script = by_code.get(r.short_code)
+        name = script.title[:30] if script else f"(不明: svf_{r.short_code})"
+        table.add_row(
+            name, r.platform or r.raw_source,
+            f"{r.sessions:,}", f"{r.purchases:,}", f"{r.revenue:,.0f}",
+        )
+        if script and r.platform:
+            matched.append((script, r))
+    console.print(table)
+
+    if dry_run:
+        console.print("(--dry-run のため記録していません)")
+        return
+    if not matched:
+        console.print("[yellow]台本と対応付けできたデータがありませんでした。[/yellow]")
+        return
+
+    console.print(
+        "\n動画ごとに quality を判定してください。数値が良くても炎上・釣りで"
+        "伸びただけなら bad にします。 (g)ood / (b)ad / (s)kip"
+    )
+    recorded = 0
+    for script, r in matched:
+        console.print(
+            f"\n[cyan]{script.title}[/cyan] ({r.platform}) "
+            f"セッション{r.sessions:,} / 購入{r.purchases:,}"
+        )
+        answer = Prompt.ask("  quality", choices=["g", "b", "s"], default="g")
+        if answer == "s":
+            continue
+        quality = "good" if answer == "g" else "bad"
+        try:
+            pipeline.report_performance(
+                script.script_id, r.platform, quality,
+                clicks=r.sessions, purchases=r.purchases, revenue=r.revenue,
+                quality_notes="GA4自動同期",
+            )
+            recorded += 1
+        except RuntimeError as e:
+            console.print(f"  [yellow]スキップ: {e}[/yellow]")
+    console.print(f"\n[green]{recorded}件を記録しました。[/green] `svf leaderboard` で確認できます。")
 
 
 @app.command()

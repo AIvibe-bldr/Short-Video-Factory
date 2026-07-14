@@ -76,7 +76,7 @@ def test_recompute_pattern_stats_excludes_bad_from_average():
         views=1000, likes=100, quality_rating="good",
     )
     bad_rec = PerformanceRecord(
-        id="p2", script_id=script.script_id, platform="youtube",
+        id="p2", script_id=script.script_id, platform="tiktok",
         views=1000000, likes=900000, quality_rating="bad",  # 数値は圧倒的だがbad
     )
     stats = recompute_pattern_stats([good_rec, bad_rec], {script.script_id: script})
@@ -86,6 +86,23 @@ def test_recompute_pattern_stats_excludes_bad_from_average():
     assert s.bad_count == 1
     # bad評価の巨大な数値が平均に混ざっていないこと
     assert s.avg_engagement_rate == pytest.approx(good_rec.engagement_rate())
+
+
+def test_same_video_same_platform_uses_latest_snapshot():
+    """同じ動画×プラットフォームを複数回記録しても最新だけが採用される."""
+    script = _script()
+    older = PerformanceRecord(
+        id="p1", script_id=script.script_id, platform="youtube",
+        views=1000, likes=10, quality_rating="good",
+    )
+    newer = PerformanceRecord(
+        id="p2", script_id=script.script_id, platform="youtube",
+        views=5000, likes=500, quality_rating="good",  # 数日後の累計スナップショット
+    )
+    stats = recompute_pattern_stats([older, newer], {script.script_id: script})
+    s = stats[0]
+    assert s.good_count == 1  # 二重計上されない
+    assert s.avg_engagement_rate == pytest.approx(newer.engagement_rate())
 
 
 def test_top_pattern_for_style_ignores_zero_good_count():

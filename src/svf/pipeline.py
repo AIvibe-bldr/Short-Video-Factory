@@ -187,6 +187,14 @@ class Pipeline:
         save_pattern_stats(stats, FEEDBACK_DIR)
         return record
 
+    def import_performance_csv(self, csv_path: Path):
+        """CSVから実績を一括取り込みする (TikTok Shop等の数値の転記用)."""
+        from svf.feedback.importer import import_performance_csv
+
+        return import_performance_csv(
+            csv_path, SCRIPTS_DIR, FEEDBACK_DIR, self._load_all_scripts()
+        )
+
     def leaderboard(self) -> list[PatternStat]:
         """実績 (good評価のみ) から見えている、スタイルごとの「勝ちパターン」一覧."""
         return load_pattern_stats(FEEDBACK_DIR)

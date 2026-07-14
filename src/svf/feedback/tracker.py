@@ -108,16 +108,32 @@ def load_performance_history(feedback_dir: Path) -> list[PerformanceRecord]:
 # ---- パターン統計 (次の台本生成が参照する「勝ちパターン」) ----
 
 
+def latest_snapshot_per_video(
+    history: list[PerformanceRecord],
+) -> list[PerformanceRecord]:
+    """同じ動画×プラットフォームの実績は最新の記録だけを採用する.
+
+    実績の数値 (再生数・購入数など) はその時点の累計スナップショットなので、
+    同じ動画を複数回記録・同期しても二重計上されないようにする。
+    quality の変更も最新が優先される (後から bad に変えれば学習から外れる)。
+    """
+    latest: dict[tuple[str, str], PerformanceRecord] = {}
+    for rec in history:  # 記録順 (jsonl追記順) に上書き
+        latest[(rec.script_id, rec.platform)] = rec
+    return list(latest.values())
+
+
 def recompute_pattern_stats(
     history: list[PerformanceRecord], scripts: dict[str, VideoScript]
 ) -> list[PatternStat]:
     """style×pattern_tag ごとに集計する.
 
-    bad評価の実績はサンプル数 (bad_count) には反映するが、
-    avg_engagement_rate / avg_conversion_rate の計算には使わない。
+    - 同じ動画×プラットフォームは最新の記録のみ採用 (累計スナップショット扱い)
+    - bad評価の実績はサンプル数 (bad_count) には反映するが、
+      avg_engagement_rate / avg_conversion_rate の計算には使わない。
     """
     groups: dict[tuple[str, str], dict] = {}
-    for rec in history:
+    for rec in latest_snapshot_per_video(history):
         script = scripts.get(rec.script_id)
         if script is None or not script.pattern_tag:
             continue

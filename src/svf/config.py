@@ -61,6 +61,8 @@ class Settings(BaseModel):
     elevenlabs_api_key: str = ""
     voicevox_url: str = "http://localhost:50021"
     heygen_api_key: str = ""
+    ga4_property_id: str = ""
+    google_credentials_path: str = ""
     claude_model: str = "claude-opus-4-8"
     region_code: str = "JP"  # トレンド収集の対象地域
     video_width: int = 1080
@@ -81,6 +83,8 @@ class Settings(BaseModel):
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
             voicevox_url=os.getenv("VOICEVOX_URL", "http://localhost:50021"),
             heygen_api_key=os.getenv("HEYGEN_API_KEY", ""),
+            ga4_property_id=os.getenv("GA4_PROPERTY_ID", ""),
+            google_credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS", ""),
             **overrides,
         )
 

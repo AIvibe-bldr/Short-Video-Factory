@@ -61,6 +61,34 @@ YouTube Shorts / TikTok / Instagram リールで**いま再生数を伸ばして
   8:2学習の勝ちパターン選定が「バズるパターン」ではなく
   「**購入につながるパターン**」を優先するようになります
 
+### 実績の記録方法は3通り
+
+| 方法 | コマンド | 向いている場面 |
+|---|---|---|
+| 手入力 | `svf report <id> --views ... --purchases ...` | 1本ずつ記録するとき |
+| CSV一括 | `svf import-csv 実績.csv` | TikTok Shop Seller Center などの数値をまとめて転記するとき (`--template` で雛形作成) |
+| GA4自動同期 | `svf sync-ga4 --days 28` | LPにGA4のeコマース計測を入れている場合。計測リンク (utm_campaign=svf_*) 別のセッション数・購入数・売上を自動取得 |
+
+どの方法でも、記録時に quality (good/bad) の人間判定が必須です
+(GA4同期も取得は自動ですが、記録前に動画ごとに判定を求められます)。
+同じ動画×プラットフォームを何度記録しても、**最新の記録だけ**が
+集計に使われるので、数値が伸びるたびに何度でも記録・同期して構いません。
+
+#### GA4自動同期の初回設定 (10分程度)
+
+1. LP/ショップにGA4を導入し、eコマース計測 (purchaseイベント) を有効化
+   (Shopify / BASE / STORES などはGA4連携の設定項目があります)
+2. Google Cloud でサービスアカウントを作成し、JSONキーをダウンロード
+3. GA4の管理画面で、そのサービスアカウントのメールアドレスに「閲覧者」権限を付与
+4. `.env` に `GA4_PROPERTY_ID` と `GOOGLE_APPLICATION_CREDENTIALS` を設定
+5. `pip install "short-video-factory[ga4]"` (または `pip install -e ".[ga4]"`)
+
+#### TikTok Shop の場合
+
+TikTok Shopは動画に商品をタグ付けして投稿すると、購入がアプリ内で完結し、
+**Seller Center に動画ごとの注文数・売上が自動で表示されます** (外部リンク不要)。
+その数値を `svf import-csv` のCSVに転記するのが最も確実です。
+
 ## スタイルプリセット (動画の内容を細かく指定)
 
 | プリセット | 内容 | 商品の見せ方 |
