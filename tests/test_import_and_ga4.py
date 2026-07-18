@@ -124,3 +124,35 @@ def test_normalize_platform():
     assert _normalize_platform("ig") == "instagram"
     assert _normalize_platform("google") is None
     assert _normalize_platform("") is None
+
+
+def test_aggregate_by_video_merges_split_sources():
+    """youtube.com と m.youtube.com のように行が分かれても合算される."""
+    from svf.integrations.ga4 import GA4VideoTraffic, aggregate_by_video
+
+    rows = [
+        GA4VideoTraffic("aaa111", "youtube", "youtube.com", 100, 3, 4440.0),
+        GA4VideoTraffic("aaa111", "youtube", "m.youtube.com", 50, 2, 2960.0),
+        GA4VideoTraffic("aaa111", "tiktok", "tiktok", 30, 1, 1480.0),
+        GA4VideoTraffic("bbb222", "youtube", "youtube.com", 10, 0, 0.0),
+    ]
+    merged = aggregate_by_video(rows)
+    assert len(merged) == 3
+    yt = next(r for r in merged if r.short_code == "aaa111" and r.platform == "youtube")
+    assert yt.sessions == 150
+    assert yt.purchases == 5
+    assert yt.revenue == 7400.0
+
+
+def test_resolve_script_path_rejects_traversal(tmp_path, monkeypatch):
+    import svf.pipeline as pipeline_mod
+    from svf.pipeline import resolve_script_path
+
+    monkeypatch.setattr(pipeline_mod, "SCRIPTS_DIR", tmp_path)
+    import pytest
+
+    for bad in ("../etc/passwd", "a/b", "a\\b", "", ".hidden", "a..b"):
+        with pytest.raises(ValueError):
+            resolve_script_path(bad)
+    with pytest.raises(FileNotFoundError):
+        resolve_script_path("not_exist")

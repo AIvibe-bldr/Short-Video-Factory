@@ -49,15 +49,6 @@ def _wrap_text(text: str, max_chars: int = 13) -> str:
     return "\n".join(lines[:4])  # 画面に収まる行数に制限
 
 
-def _escape_drawtext(text: str) -> str:
-    return (
-        text.replace("\\", "\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-        .replace("%", "\\%")
-    )
-
-
 class VideoAssembler:
     def __init__(
         self,
@@ -72,6 +63,11 @@ class VideoAssembler:
         self.height = height
         self.fps = fps
         self.font_path = find_font(font_path)
+        if self.font_path is None:
+            print(
+                "警告: 日本語対応フォントが見つからないため、テロップなしで生成します。"
+                "fonts-noto-cjk 等をインストールするか、font_path を指定してください。"
+            )
         self.tts_provider = tts_provider
         self.tts_settings = tts_settings or {}
         self._check_ffmpeg()
@@ -97,6 +93,10 @@ class VideoAssembler:
         tts_voice: str = "",
     ) -> ProduceResult:
         """台本1本をmp4に組み立てる."""
+        if not script.scenes:
+            raise ValueError(
+                f"台本 {script.script_id} にシーンがありません。動画を生成できません。"
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="svf_") as tmp:
             tmp_dir = Path(tmp)
@@ -116,7 +116,7 @@ class VideoAssembler:
                 visual = picker.pick(scene.visual_direction, scene.product_visibility)
                 seg = tmp_dir / f"seg_{scene.index:03d}.mp4"
                 self._render_segment(
-                    visual, scene.on_screen_text, duration, narration_path, seg
+                    visual, scene.on_screen_text, duration, narration_path, seg, tmp_dir
                 )
                 segments.append(seg)
 
@@ -136,6 +136,7 @@ class VideoAssembler:
         duration: float,
         narration: Optional[Path],
         out_path: Path,
+        tmp_dir: Path,
     ) -> None:
         """1シーン分のセグメントを作る."""
         w, h, fps = self.width, self.height, self.fps
@@ -173,10 +174,14 @@ class VideoAssembler:
             cmd += ["-f", "lavfi", "-t", f"{duration}", "-i", "anullsrc=r=44100:cl=stereo"]
 
         # --- テロップ ---
+        # テキストは textfile= で渡す。inline の text= はクォート・カンマ・
+        # バックスラッシュを含むテロップで filter 文字列が壊れるため使わない
+        # (Claudeが生成する文には任意の記号が入りうる)。
         if on_screen_text.strip() and self.font_path:
-            wrapped = _escape_drawtext(_wrap_text(on_screen_text))
+            text_file = tmp_dir / f"{out_path.stem}_text.txt"
+            text_file.write_text(_wrap_text(on_screen_text), encoding="utf-8")
             vf += (
-                f",drawtext=fontfile='{self.font_path}':text='{wrapped}':"
+                f",drawtext=fontfile='{self.font_path}':textfile='{text_file.as_posix()}':"
                 f"fontsize=64:fontcolor=white:borderw=6:bordercolor=black:"
                 f"x=(w-text_w)/2:y=h*0.72:line_spacing=16"
             )

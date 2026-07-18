@@ -67,6 +67,15 @@ def test_render_pinned_comment_without_product_url():
     assert "(商品URL未設定)" in text
 
 
+def test_render_pinned_comment_appends_link_when_placeholder_missing():
+    """生成時に {LINK} が抜けても計測リンクは失われない."""
+    text = render_pinned_comment(
+        "今日も見てくれてありがとう!", "https://example.com/item", "youtube", "abc123"
+    )
+    assert "utm_campaign=svf_abc123" in text
+    assert text.startswith("今日も見てくれてありがとう!")
+
+
 # ---- 購入データが勝ちパターン選定に優先される ----
 
 

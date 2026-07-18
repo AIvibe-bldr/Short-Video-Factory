@@ -37,6 +37,27 @@ class GA4VideoTraffic:
     revenue: float
 
 
+def aggregate_by_video(rows: list[GA4VideoTraffic]) -> list[GA4VideoTraffic]:
+    """同じ動画×プラットフォームの行を合算する.
+
+    GA4では同一プラットフォームでも流入元表記が複数に分かれることがある
+    (例: youtube.com / m.youtube.com)。分かれたまま個別に記録すると
+    「最新記録のみ採用」の集計でセッション数が過少計上されるため、
+    記録前に必ず合算する。platform不明の行はそのまま残す (呼び出し側で表示用)。
+    """
+    merged: dict[tuple[str, Optional[str]], GA4VideoTraffic] = {}
+    for r in rows:
+        key = (r.short_code, r.platform)
+        if key in merged:
+            m = merged[key]
+            m.sessions += r.sessions
+            m.purchases += r.purchases
+            m.revenue += r.revenue
+        else:
+            merged[key] = GA4VideoTraffic(**r.__dict__)
+    return list(merged.values())
+
+
 def _normalize_platform(source: str) -> Optional[str]:
     s = (source or "").lower()
     if "youtube" in s:

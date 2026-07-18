@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from svf.config import StylePreset, list_styles, load_style
-from svf.media.assemble import _escape_drawtext, _wrap_text
+from svf.media.assemble import _wrap_text
 from svf.media.visuals import VisualPicker
 from svf.models import Scene, TrendItem, VideoScript
 from svf.trends.base import extract_hashtags
@@ -78,10 +78,6 @@ def test_wrap_text_limits_lines():
     lines = wrapped.split("\n")
     assert len(lines) <= 4
     assert all(len(line) <= 11 for line in lines)
-
-
-def test_escape_drawtext():
-    assert _escape_drawtext("100%off: it's") == "100\\%off\\: it\\'s"
 
 
 def test_visual_picker_gradient_fallback(tmp_path: Path):

@@ -163,21 +163,35 @@ def script(
 @app.command()
 def produce(
     script_path: Optional[Path] = typer.Argument(
-        None, help="台本JSONのパス (省略時は未生成の台本すべて)"
+        None, help="台本JSONのパス (省略時は動画が未生成の台本すべて)"
     ),
     tts: str = typer.Option("edge", "--tts", help="音声合成: edge / voicevox / elevenlabs"),
+    force: bool = typer.Option(
+        False, "--force", help="動画が生成済みの台本も作り直す (省略時はスキップ)"
+    ),
 ):
     """台本からショート動画 (9:16 mp4) を生成する."""
+    from svf.config import OUTPUT_DIR
+
     pipeline = Pipeline()
     paths = [script_path] if script_path else sorted(SCRIPTS_DIR.glob("*.json"))
     if not paths:
         console.print("[red]台本がありません。先に `svf script` を実行してください。[/red]")
         raise typer.Exit(1)
+    produced = 0
     for p in paths:
         s = load_script(p)
+        # 一括実行時は生成済みをスキップ (個別指定 or --force なら作り直す)
+        existing = OUTPUT_DIR / f"{s.script_id}.mp4"
+        if script_path is None and not force and existing.exists():
+            console.print(f"[dim]スキップ (生成済み): {s.script_id}[/dim]")
+            continue
         console.print(f"生成中: {s.script_id} ...")
         result = pipeline.produce(s, tts_provider=tts)
         console.print(f"  [green]完成:[/green] {result.video_path}")
+        produced += 1
+    if produced == 0 and script_path is None:
+        console.print("すべて生成済みでした。作り直す場合は --force を付けてください。")
 
 
 @app.command()
@@ -195,11 +209,13 @@ def links(
     投稿直後にこのコメントを書き込み、固定すること。
     """
     from svf.config import load_product
+    from svf.pipeline import resolve_script_path
     from svf.tracking import build_tracking_url, coupon_code, render_pinned_comment
 
-    path = SCRIPTS_DIR / f"{script_id}.json"
-    if not path.exists():
-        console.print(f"[red]台本 {script_id} が見つかりません。[/red]")
+    try:
+        path = resolve_script_path(script_id)
+    except (ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
     s = load_script(path)
     if not s.short_code:
@@ -285,6 +301,9 @@ def report(
     if quality not in ("good", "bad"):
         console.print("[red]--quality は good か bad を指定してください[/red]")
         raise typer.Exit(1)
+    if platform not in ("youtube", "tiktok", "instagram"):
+        console.print("[red]--platform は youtube / tiktok / instagram のいずれかを指定してください[/red]")
+        raise typer.Exit(1)
     record = Pipeline().report_performance(
         script_id,
         platform,
@@ -360,8 +379,7 @@ def sync_ga4(
     """
     from rich.prompt import Prompt
 
-    from svf.integrations.ga4 import fetch_video_traffic
-    from svf.pipeline import FEEDBACK_DIR
+    from svf.integrations.ga4 import aggregate_by_video, fetch_video_traffic
 
     pipeline = Pipeline()
     settings = pipeline.settings
@@ -373,9 +391,11 @@ def sync_ga4(
         raise typer.Exit(1)
 
     console.print(f"GA4 (property {settings.ga4_property_id}) から直近{days}日を取得中...")
-    rows = fetch_video_traffic(
-        settings.ga4_property_id, days=days,
-        credentials_path=settings.google_credentials_path,
+    rows = aggregate_by_video(
+        fetch_video_traffic(
+            settings.ga4_property_id, days=days,
+            credentials_path=settings.google_credentials_path,
+        )
     )
     if not rows:
         console.print("svf_ で始まる utm_campaign のトラフィックが見つかりませんでした。")

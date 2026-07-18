@@ -48,6 +48,26 @@ SOURCES_DIR = DATA_DIR / "sources"
 FEEDBACK_DIR = DATA_DIR / "feedback"
 
 
+def resolve_script_path(script_id: str) -> Path:
+    """script_id を検証して台本ファイルのパスを返す.
+
+    script_id はファイルパスに連結されるため、パス区切りや `..` を含む
+    値は拒否する (タイポや不正な値で意図しないファイルを読み書きしないため)。
+    """
+    if (
+        not script_id
+        or "/" in script_id
+        or "\\" in script_id
+        or ".." in script_id
+        or script_id.startswith(".")
+    ):
+        raise ValueError(f"不正な台本ID: {script_id!r}")
+    path = SCRIPTS_DIR / f"{script_id}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"台本 {script_id} が見つかりません。")
+    return path
+
+
 class Pipeline:
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or Settings.load()
@@ -200,10 +220,7 @@ class Pipeline:
         return load_pattern_stats(FEEDBACK_DIR)
 
     def _find_script_path(self, script_id: str) -> Path:
-        path = SCRIPTS_DIR / f"{script_id}.json"
-        if not path.exists():
-            raise FileNotFoundError(f"台本 {script_id} が見つかりません。")
-        return path
+        return resolve_script_path(script_id)
 
     def _load_all_scripts(self) -> dict[str, VideoScript]:
         scripts = (load_script(p) for p in SCRIPTS_DIR.glob("*.json"))

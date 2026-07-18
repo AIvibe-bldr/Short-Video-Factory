@@ -62,7 +62,16 @@ def coupon_code(short_code: str) -> str:
 def render_pinned_comment(
     template: str, base_url: str, platform: str, short_code: str
 ) -> str:
-    """固定コメントのテンプレート ({LINK}/{CODE} 入り) を実際の文面にする."""
+    """固定コメントのテンプレート ({LINK}/{CODE} 入り) を実際の文面にする.
+
+    テンプレートに {LINK} が無い場合 (生成時の指示漏れ) でも、計測リンクが
+    失われないよう末尾に追記する。
+    """
     url = build_tracking_url(base_url, platform, short_code)
-    text = template.replace(LINK_PLACEHOLDER, url or "(商品URL未設定)")
+    if LINK_PLACEHOLDER in template:
+        text = template.replace(LINK_PLACEHOLDER, url or "(商品URL未設定)")
+    else:
+        text = template.rstrip()
+        if url:
+            text += f"\n{url}"
     return text.replace(CODE_PLACEHOLDER, coupon_code(short_code))
